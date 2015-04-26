@@ -71,6 +71,13 @@ correlations <- cor(training[,dataPredictors])
 corrplot(correlations,order = "hclust",tl.cex = 0.8)
 ```
 
+The distribution of the outcome classes is as follows:
+```{r ,fig.width=10}
+histogram(training$classe,xlab="classes")
+```
+
+The distribution of five classes is roughly even although the A class is liitle higher.  
+
 Project platform:
   
   * hardware:MacBook Pro
@@ -88,7 +95,7 @@ Based on the project platform and given the goal of this project is to predict t
   1 Linear discriminant analysis: This model was created using the standard
 set of equations with 1-4 dimens.
 
-  2 Single CART trees: The CART models were fit with equal costs per class and 
+  2 Single CART tree: The CART models were fit with equal costs per class and 
 was tuned over 30 values of the complexity parameter.
 
   3 Bagged CART trees: These models used 20 bagged CART trees.
@@ -119,7 +126,7 @@ ldaFit <- train(x = training[,dataPredictors],
                 tuneLength = 4,
                 trControl = ctrl)
 ```
-Create single CART trees model:
+Create single CART tree model:
 ```{r ,message=FALSE}
 set.seed(138)
 rpFit <- train(x = training[, dataPredictors],
@@ -158,7 +165,7 @@ rfFit <- train(x = training[, dataPredictors],
 The same cross-validation folds were used for each model. Following figure show 
 the performance for the cross-validated Accuracy and Kappa across different 
 models. From this, the top performing model is random forests.
-```{r}
+```{r ,fig.width=10}
 modelList <- list("Linear discriminant analysis" = ldaFit,
                   "Single CART trees" =rpFit,
                   "Bagged CART trees" = bagFit,
@@ -169,7 +176,7 @@ plot(bwplot(rs,scales = list(cex=1),
             different models."))
 ```
 
-The besttune parameter and the expected out of sample error of the final model of random forests is follows:
+The besttune parameter and the estimate of error rate of the final model are follows:
 ```{r}
 rfFit$finalModel
 ```
@@ -180,8 +187,15 @@ rfPred <- predict(rfFit, testing)
 confusionMatrix(rfPred, testing$classe)
 ```
 
+```{r, echo=FALSE}
+accuraryTest <- as.numeric(1-confusionMatrix(rfPred, testing$classe)$overall[1])
+```
+The test set data isn't used to build the model, so the erroe rate of model on 
+test set can be used to estimate the out of sample error. The out of sample error 
+is `r accuraryTest`.
+
 Above result show the performance of this model on the train set and test set are 
-quite close and excellent so that the final model will be used to predict 20 different test cases. 
+quite close and excellent so the final model will be suited to predict the 20 different test cases. 
 
 ###Prediction of 20 different test cases
 ```{r}

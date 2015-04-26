@@ -1,0 +1,212 @@
+---
+title: "Investigation of the Weight Lifting Exercise Dataset"
+output: html_document
+---
+#####Author:Daopeng Shi
+
+###Overview:
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively.
+In this analysis, the Weight Lifting Exercise Dataset contain data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants is investigated to 
+bulid a prediction model. The validation show the performance of the final model 
+is excellent. Finally, this model is uesed to predict 20 different test cases. 
+
+###Exploratory Data Analyses
+Assuming the data files has been downloaded in the current working directory of the R. First load and check the data:
+```{r , results='hide'}
+trainData <- read.csv("pml-training.csv",stringsAsFactors = FALSE)
+dim(trainData)
+summary(trainData)
+str(trainData)
+```
+The train data contains 19622 samples and has 160 variables. Some variables has the value "#DIV/0!" cause the numeric variables been converted to character(e.g. kurtosis_roll_belt and kurtosis_picth_belt). This can be corrected by treating the value "#DIV/0!" as NA.  
+```{r ,cache=TRUE}
+trainData <- read.csv("pml-training.csv",na.strings = c("NA","#DIV/0!"),
+                      stringsAsFactors = FALSE)
+testData <- read.csv("pml-testing.csv",na.strings = c("NA","#DIV/0!"),
+                     stringsAsFactors = FALSE)
+```
+In some variables, the percentage of missing data is substantial enough to remove this predictor from subsequent modeling activities(e.g. kurtosis_roll_belt and kurtosis_picth_belt).
+```{r}
+findNAPredictor <- function(object,naLevel = 0.95)
+{
+  naIndex <- vector(mode = "integer")
+  nSample <- nrow(object)
+  for(i in 1:ncol(object))
+  {
+    nNa <- sum(is.na(object[,i]))
+    if(nNa/nSample > naLevel)
+    {
+      naIndex <- append(naIndex,i)
+    }      
+  }
+  naIndex
+}
+naIndex <- findNAPredictor(trainData)
+trainData <- trainData[,-naIndex]
+testData <- testData[,-naIndex]
+```
+The goal of this project is to predict the manner in which they did the exercise 
+with the data captured by the sensors in the users’ glove, armband, lumbar belt and dumbbell(For more details, check http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf). Non-relevent variables of the sersors can be removed.
+```{r}
+trainData <- trainData[,-(1:7)]
+testData <- testData[,-(1:7)]
+trainData$classe <- factor(trainData$classe)
+dataPredictors <- names(trainData)[1:52] 
+```
+###Data Splitting and Model Strategy
+The final train data has 19622 samples and 52 predictors. 80% will be used for training the models while the remainder will be used to evaluate the final candidate models. The data were split using stratified random sampling to preserve the class distribution of the outcome.
+```{r ,message=FALSE}
+library(caret)
+set.seed(2841)
+inTrain <- createDataPartition(trainData$classe,p = 0.8,list = FALSE)
+training <- trainData[inTrain,]
+testing <- trainData[-inTrain,]
+```
+Following figure shows a correlation matrix of the training set. Each pairwise
+correlation is computed from the training data and colored according to its
+magnitude. Dark blue colors indicate strong positive correlations, dark red is used for strong negative correlations, and white implies no empirical relationship between the predictors. In this figure, the predictor variables have been grouped using a clustering technique so that collinear groups of predictors are adjacent to one another. There are some blocks that indicate significant relationships between the predictors. Using highly correlated predictors can result in highly unstable models, numerical errors, and degraded predictive performance.
+```{r ,fig.height=10,fig.width=10}
+library(corrplot)
+correlations <- cor(training[,dataPredictors])
+corrplot(correlations,order = "hclust",tl.cex = 0.8)
+```
+
+The distribution of the outcome classes is as follows:
+```{r ,fig.width=10}
+histogram(training$classe,xlab="classes")
+```
+
+The distribution of five classes is roughly even although the A class is liitle higher.  
+
+Project platform:
+  
+  * hardware:MacBook Pro
+  
+  * OS:OS X Yosemite 10.10.3
+  
+  * Processor:2.9GHz Intel Core i7(4 cores)
+  
+  * Memory:8GB 1600MHz DDR3
+  
+  * R:3.1.3
+  
+Based on the project platform and given the goal of this project is to predict the manner in which they did the exercise. For avoiding heavy computation burden, 10-fold cross–validation were used to tune the models to maximize the overall accuracy.A series of models were fit to the training set. The tuning parameter combination associated with the largest accuracy value was chosen for the final model and used in conjunction with the entire training set. The following models were investigated:
+  
+  1 Linear discriminant analysis: This model was created using the standard
+set of equations with 1-4 dimens.
+
+  2 Single CART tree: The CART models were fit with equal costs per class and 
+was tuned over 30 values of the complexity parameter.
+
+  3 Bagged CART trees: These models used 20 bagged CART trees.
+  
+  4 Random forests: The model used 20 trees in the forest and was tuned over 10 values of the tuning parameter.
+  
+Set parallel processing
+```{r ,message=FALSE}
+library(doMC)
+registerDoMC(4)
+```
+Create a control object to use 10-fold cross–validation for the models:
+```{r}
+ctrl <- trainControl(method = "cv", 
+                     number = 10, 
+                     repeats = 1,
+                     allowParallel = TRUE)
+```
+Create standard linear discriminant analysis model:
+```{r ,message=FALSE}
+set.seed(138)
+ldaFit <- train(x = training[,dataPredictors],
+                y = training$classe,
+                method = "lda2",
+                preProcess = c("center", "scale"),
+                metric = "Accuracy",
+                maximize = TRUE,
+                tuneLength = 4,
+                trControl = ctrl)
+```
+Create single CART tree model:
+```{r ,message=FALSE}
+set.seed(138)
+rpFit <- train(x = training[, dataPredictors],
+               y = training$classe,
+               method = "rpart",
+               metric = "Accuracy",
+               maximize = TRUE,
+               tuneLength = 30,
+               trControl = ctrl)
+```
+Create bagged CART trees model:
+```{r ,message=FALSE}
+set.seed(138)
+bagFit <- train(x = training[, dataPredictors],
+                y = training$classe,
+                method = "treebag",
+                metric = "Accuracy",
+                maximize = TRUE,
+                nbagg = 20,
+                trControl = ctrl)
+```
+Create random forests model:
+```{r ,message=FALSE}
+set.seed(138)
+rfFit <- train(x = training[, dataPredictors],
+               y = training$classe,
+               method = "rf",
+               metric = "Accuracy",
+               maximize = TRUE,
+               tuneLength = 10,
+               ntree = 20,
+               importance = TRUE,
+               trControl = ctrl)
+```
+###Model Performance
+The same cross-validation folds were used for each model. Following figure show 
+the performance for the cross-validated Accuracy and Kappa across different 
+models. From this, the top performing model is random forests.
+```{r ,fig.width=10}
+modelList <- list("Linear discriminant analysis" = ldaFit,
+                  "Single CART trees" =rpFit,
+                  "Bagged CART trees" = bagFit,
+                  "Random Forests" = rfFit)
+rs <- resamples(modelList)
+plot(bwplot(rs,scales = list(cex=1),
+            main = "Performance for the cross-validated Accuracy and Kappa across 
+            different models."))
+```
+
+The besttune parameter and the estimate of error rate of the final model are follows:
+```{r}
+rfFit$finalModel
+```
+
+The performance of random forests model on the test set as follows:
+```{r}
+rfPred <- predict(rfFit, testing)
+confusionMatrix(rfPred, testing$classe)
+```
+
+```{r, echo=FALSE}
+accuraryTest <- as.numeric(1-confusionMatrix(rfPred, testing$classe)$overall[1])
+```
+The test set data isn't used to build the model, so the erroe rate of model on 
+test set can be used to estimate the out of sample error. The out of sample error 
+is `r accuraryTest`.
+
+Above result show the performance of this model on the train set and test set are 
+quite close and excellent so the final model will be suited to predict the 20 different test cases. 
+
+###Prediction of 20 different test cases
+```{r}
+answers <- predict(rfFit, testData)
+answers <- as.character(answers)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
